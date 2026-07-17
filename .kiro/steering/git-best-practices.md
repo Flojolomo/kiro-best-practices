@@ -18,8 +18,11 @@ inclusion: always
 - Use descriptive branch names (feature/user-auth, fix/login-bug)
 - Delete merged branches to keep repository clean
 
-## Workflow
+## Workflow (REQUIRED)
 - Pull latest changes before starting work
+- **Every change MUST be committed and pushed** — no local-only work
+- **If no PR is open, create one** after the first push to a feature branch
+- **If a previous PR was merged or closed, create a new branch and open a new PR** — never reuse closed/merged PR branches
 - Commit frequently with logical chunks
 - Use interactive rebase to clean up history before merging
 - Review code before merging (pull requests)

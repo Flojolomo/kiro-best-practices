@@ -7,7 +7,125 @@ inclusion: always
 
 ## Overview
 
-Progressive Web Apps must deliver a native-like experience with consistent design across all devices and pages. This steering file defines standards for uniform design, DRY component architecture, service workers, caching, manifests, mobile-first design, and offline-first architecture.
+Progressive Web Apps must deliver a native-like experience with consistent design across all devices and pages. All PWA projects use **React 18 + TypeScript + Vite + Tailwind CSS** for the frontend and **AWS CDK v2 + TypeScript + Lambda** for the backend infrastructure.
+
+This steering file defines the required technology stack, project structure, uniform design standards, DRY component architecture, service workers, caching, manifests, mobile-first design, and offline-first architecture.
+
+---
+
+## Required Technology Stack
+
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Frontend framework | React 18 + TypeScript | Functional components, hooks only |
+| Build tool | Vite | With `vite-plugin-pwa` for service worker |
+| Styling | Tailwind CSS | Design tokens via `tailwind.config.js` |
+| State management | React Context + React Query | No Redux |
+| Routing | React Router | Route-level code splitting |
+| Infrastructure | AWS CDK v2 + TypeScript | Separate stacks for shared/ephemeral |
+| Backend | AWS Lambda (TypeScript) | `NodejsFunction` constructs |
+| Database | DynamoDB | Single-table design with GSIs |
+| Auth | AWS Cognito | JWT tokens via Amplify client |
+| CI/CD | GitHub Actions | Ephemeral envs + production deploy |
+
+---
+
+## Project Directory Structure (REQUIRED)
+
+```
+project-root/
+├── .github/
+│   └── workflows/
+│       ├── deploy.yml              # Production deployment
+│       ├── ephemeral-env.yml       # Per-PR ephemeral environment
+│       └── test.yml                # CI tests
+├── .kiro/
+│   └── steering/                   # Development standards
+├── frontend/
+│   ├── public/                     # Static assets (icons, manifest)
+│   ├── src/
+│   │   ├── components/             # Feature-specific components
+│   │   │   ├── ui/                 # Shared reusable UI library
+│   │   │   │   ├── Alert.tsx
+│   │   │   │   ├── Button.tsx
+│   │   │   │   ├── ButtonGroup.tsx
+│   │   │   │   ├── Card.tsx
+│   │   │   │   ├── EmptyState.tsx
+│   │   │   │   ├── Error.tsx
+│   │   │   │   ├── IconButton.tsx
+│   │   │   │   ├── Input.tsx
+│   │   │   │   ├── Modal.tsx
+│   │   │   │   ├── PageHeader.tsx
+│   │   │   │   ├── Section.tsx
+│   │   │   │   ├── TabNavigation.tsx
+│   │   │   │   └── index.ts       # Barrel export for all UI components
+│   │   │   ├── __tests__/          # Component tests
+│   │   │   ├── FeatureComponent.tsx
+│   │   │   └── index.ts           # Barrel export for feature components
+│   │   ├── contexts/               # React Context providers
+│   │   ├── hooks/                  # Custom hooks (useAuth, useNetworkStatus, etc.)
+│   │   ├── layouts/                # Layout wrappers (DashboardLayout, AuthLayout)
+│   │   ├── pages/                  # Route-level page components
+│   │   ├── providers/              # App-level providers (AppProviders wrapper)
+│   │   ├── routes/                 # Route definitions & guards (ProtectedRoute)
+│   │   ├── types/                  # TypeScript type definitions
+│   │   ├── utils/                  # Business logic, API client, services
+│   │   ├── App.tsx                 # Root component with routing
+│   │   ├── index.css               # Tailwind directives + global styles
+│   │   └── main.tsx                # Entry point
+│   ├── index.html                  # HTML template
+│   ├── jest.config.js              # Test configuration
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.js          # Design tokens source of truth
+│   ├── tsconfig.json
+│   └── vite.config.ts              # Vite + PWA plugin config
+├── infrastructure/
+│   ├── bin/                        # CDK app entry point
+│   ├── lib/                        # CDK stacks
+│   │   ├── app-stack.ts            # Ephemeral stack (API, Lambda, S3, CloudFront)
+│   │   ├── auth-stack.ts           # Shared auth stack (Cognito) — NEVER destroyed
+│   │   └── github-oidc-stack.ts    # GitHub OIDC for CI/CD
+│   ├── lambda/                     # Lambda function handlers
+│   │   ├── functionName/
+│   │   │   ├── src/
+│   │   │   │   └── index.ts       # Handler entry point
+│   │   │   ├── package.json       # Isolated dependencies
+│   │   │   └── tsconfig.json
+│   │   └── anotherFunction/
+│   │       └── ...
+│   ├── cdk.json
+│   ├── jest.config.js
+│   ├── package.json
+│   └── tsconfig.json
+├── package.json                    # Root workspace config & scripts
+└── README.md
+```
+
+### Directory Rules
+
+- **Frontend and infrastructure are sibling directories** — never nested
+- **Each Lambda function has its own directory** with isolated `package.json` and `tsconfig.json`
+- **CDK stacks are separated by lifecycle**: shared (auth, database) vs ephemeral (API, frontend hosting)
+- **Components follow a two-tier structure**: `components/ui/` for generic reusable UI, `components/` for feature-specific components
+- **All shared UI components MUST be exported** from `components/ui/index.ts`
+- **Pages are thin** — they compose components, not contain raw HTML
+- **Hooks, contexts, utils, and types each get their own directory** — never mix concerns
+- **Tests co-locate with source** in `__tests__/` subdirectories or `.test.ts` files
+- **Config files live at the package root** (`frontend/`, `infrastructure/`), not in `src/`
+
+### Naming Conventions
+
+| Item | Convention | Example |
+|------|-----------|---------|
+| Components | PascalCase | `ActiveTimerWidget.tsx` |
+| Hooks | camelCase with `use` prefix | `useAuth.ts`, `useNetworkStatus.ts` |
+| Utils/services | camelCase | `timeRecordService.ts`, `apiClient.ts` |
+| Types | PascalCase (file), PascalCase (exports) | `types/index.ts`, `TimeRecord` |
+| Pages | PascalCase with `Page` suffix | `ActiveTimerPage.tsx`, `ProfilePage.tsx` |
+| Contexts | PascalCase with `Context` suffix | `ActiveTimerContext.tsx` |
+| Lambda handlers | camelCase (directory) | `lambda/timeRecords/`, `lambda/todos/` |
+| CDK stacks | kebab-case (file), PascalCase (class) | `auth-stack.ts`, `AuthStack` |
 
 ---
 

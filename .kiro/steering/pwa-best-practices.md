@@ -1,28 +1,21 @@
 ---
-title: PWA Uniform Design & Ephemeral Environment Testing
+title: Progressive Web App Best Practices
 inclusion: always
 ---
 
-# PWA Uniform Design & Ephemeral Environment Testing
+# Progressive Web App (PWA) Best Practices
 
-## Problem Statement
+## Overview
 
-Without enforced design consistency, PWA pages and components drift apart visually over time:
-- Pages use different spacing, typography, and layout patterns
-- Inline Tailwind classes vary between components doing the same thing
-- Shared UI components exist but are bypassed with raw HTML
-- Loading, error, and empty states look different on each page
-- No single source of truth for colors, spacing scales, or component variants
-
-This steering file establishes standards to prevent visual inconsistency and code duplication in Progressive Web Apps, and defines ephemeral environments as the standard for testing changes before merge.
+Progressive Web Apps must deliver a native-like experience with consistent design across all devices and pages. This steering file defines standards for uniform design, DRY component architecture, service workers, caching, manifests, mobile-first design, and offline-first architecture.
 
 ---
 
-## Design System Foundations
+## Design Token System (REQUIRED)
 
-### Design Tokens (REQUIRED)
+### Single Source of Truth for Visual Values
 
-Define all visual values in a single location. Never use magic color/spacing values inline.
+Define all visual values in ONE location. Never use magic values inline.
 
 ```typescript
 // src/styles/tokens.ts or tailwind.config.js theme.extend
@@ -49,28 +42,22 @@ export const tokens = {
 };
 ```
 
-**Rules:**
+### Token Rules
+
 - All colors MUST come from the Tailwind config `theme.extend.colors` or a tokens file
 - Never write bare hex/rgb values in component files
 - Spacing between sections MUST use the standard scale (`space-y-4 sm:space-y-6`)
 - Border radius, shadows, and font sizes follow the token system
-
-### Tailwind Configuration
-
-Extend `tailwind.config.js` with project-specific tokens:
-
-```javascript
-theme: {
-  extend: {
-    colors: {
-      primary: { /* full scale */ },
-      danger: { /* full scale */ },
-    },
-    spacing: { /* custom values */ },
-    screens: { xs: '475px' },
+- Tailwind config is the source of truth:
+  ```javascript
+  theme: {
+    extend: {
+      colors: { primary: { /* full scale */ }, danger: { /* full scale */ } },
+      spacing: { /* custom values */ },
+      screens: { xs: '475px' },
+    }
   }
-}
-```
+  ```
 
 ---
 
@@ -122,11 +109,11 @@ Every page MUST follow this structure:
 ```typescript
 export const SomePage: React.FC = () => {
   return (
-    <LandingPage>              {/* Shared layout wrapper */}
-      <DataCacheProvider>       {/* Data context if needed */}
-        <SomePageContent />     {/* Actual page content */}
-      </DataCacheProvider>
-    </LandingPage>
+    <LayoutWrapper>             {/* Shared layout wrapper */}
+      <DataProvider>             {/* Data context if needed */}
+        <SomePageContent />      {/* Actual page content */}
+      </DataProvider>
+    </LayoutWrapper>
   );
 };
 
@@ -154,7 +141,7 @@ const SomePageContent: React.FC = () => {
 
 ### Layout Rules
 
-- **One layout wrapper per page type**: `LandingPage` for authenticated pages, `AuthLandingPage` for auth flows
+- **One layout wrapper per page type**: e.g., `DashboardLayout` for authenticated, `AuthLayout` for auth flows
 - **Pages are thin**: they compose shared components, they don't contain raw HTML
 - **Consistent section spacing**: always `space-y-4 sm:space-y-6` between top-level sections
 - **PageHeader on every page**: use `<PageHeader>` for title/description/actions, never inline headings
@@ -173,12 +160,12 @@ Every page handles these states identically:
 
 ---
 
-## DRY Patterns (Don't Repeat Yourself)
+## DRY Principles (Don't Repeat Yourself)
 
-### Extract at the 2nd Occurrence
+### The 2-Occurrence Rule
 
-- If you write similar JSX in 2 places, extract a shared component
-- If you write similar logic in 3 places, extract a utility function or custom hook
+- If you write similar JSX in **2 places**, extract a shared component
+- If you write similar logic in **3 places**, extract a utility function or custom hook
 - If you write similar API patterns, use a generic service function
 
 ### Scrollable List Pattern
@@ -194,6 +181,9 @@ All list views MUST use a common pattern:
   sortBy={{ field: 'date', order: 'desc' }}  // Optional
 />
 ```
+
+- List container handles: scrolling, grouping, sorting, empty states
+- Item components handle: display, actions, item-specific state
 
 ### Form Pattern
 
@@ -211,186 +201,226 @@ All forms MUST use shared `Input`, `Button`, and validation patterns:
 
 ### Data Table Pattern
 
-Tables across pages MUST use consistent structure:
+Tables across pages MUST use consistent structure. If a table is needed in 2+ places, extract a `<DataTable>` component:
 
 ```typescript
-<div className="bg-white shadow rounded-lg">
-  <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
-    <h3 className="text-base sm:text-lg font-medium text-gray-900">{title}</h3>
-  </div>
-  <div className="overflow-x-auto">
-    <table className="min-w-full divide-y divide-gray-200">
-      {/* Standard thead/tbody structure */}
-    </table>
-  </div>
-</div>
+<DataTable
+  columns={[
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'duration', label: 'Duration' },
+    { key: 'percentage', label: '%' },
+  ]}
+  data={items}
+  striped
+  responsive
+/>
 ```
 
-If a table is needed in 2+ places, extract a `<DataTable columns={...} data={...} />` component.
+### Composition Over Inheritance
+
+```typescript
+// GOOD: Composition via children and slots
+<Card>
+  <CardHeader title="Title" actions={<Button>Edit</Button>} />
+  <CardContent>
+    <Section title="Details">{content}</Section>
+  </CardContent>
+</Card>
+
+// BAD: Monolithic component with many props
+<Card title="Title" actions={...} content={...} footer={...} variant="..." />
+```
 
 ---
 
-## PWA-Specific Requirements
+## Service Worker & Caching
 
-### Service Worker & Caching
+### Setup
 
 - Use `vite-plugin-pwa` or Workbox for service worker generation
-- Cache the app shell (HTML, CSS, JS) with a cache-first strategy
-- Cache API responses with a network-first strategy (fall back to cache when offline)
-- Version the cache and clear stale caches on update
+- Register the service worker in the app entry point
+- Handle service worker updates gracefully (prompt user to reload)
 
-### Web App Manifest
+### Caching Strategies
 
-Required manifest fields:
+| Resource Type | Strategy | Rationale |
+|--------------|----------|-----------|
+| App shell (HTML, CSS, JS) | Cache-first | Fast loads, update in background |
+| API responses | Network-first | Fresh data preferred, cache as fallback |
+| Static assets (images, fonts) | Cache-first | Rarely change, fast loads |
+| User-generated content | Network-only | Always needs fresh data |
+
+### Cache Management
+
+- Version the cache and clear stale caches on service worker update
+- Set maximum cache sizes to prevent storage bloat
+- Implement cache expiration for API responses (e.g., 24 hours)
+- Use `skipWaiting()` and `clientsClaim()` for immediate activation when appropriate
+
+---
+
+## Web App Manifest
+
+### Required Fields
+
 ```json
 {
   "name": "App Full Name",
   "short_name": "AppName",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#primary-600",
+  "orientation": "portrait-primary",
+  "theme_color": "#<primary-color>",
   "background_color": "#ffffff",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
 ```
 
-### Mobile-First & Responsive Design
+### Manifest Rules
 
-- Design for mobile first, enhance for larger screens
-- Use Tailwind responsive prefixes: base (mobile) -> `sm:` -> `md:` -> `lg:` -> `xl:`
-- Touch targets: minimum 44x44px for interactive elements
-- Safe area handling for iOS standalone mode:
+- Include both regular and maskable icons
+- `theme_color` must match the app's primary brand color
+- `background_color` must match the app's splash screen background
+- `start_url` should include a source parameter for analytics (e.g., `/?source=pwa`)
+- Test installability with Lighthouse PWA audit
+
+---
+
+## Mobile-First & Responsive Design
+
+### Breakpoint Strategy
+
+Design for mobile first, then enhance for larger screens:
+
+```
+base (mobile, <640px) -> sm: (640px) -> md: (768px) -> lg: (1024px) -> xl: (1280px)
+```
+
+### Touch Targets
+
+- **Minimum size**: 44x44px for all interactive elements
+- **Spacing**: minimum 8px between adjacent touch targets
+- **Implementation**:
   ```css
-  @supports (padding-bottom: env(safe-area-inset-bottom)) {
-    body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  @layer utilities {
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    button { min-height: 44px; }
   }
   ```
-- Prevent input zoom on iOS: form inputs must be at least 16px font-size on mobile
 
-### Offline-First UI Indicators
+### iOS Safe Area Handling
 
-- Show clear online/offline status to users
-- Indicate when content is stale (served from cache)
-- Queue actions performed offline and sync when connection returns
-- Use optimistic UI updates with rollback on failure
+Required for standalone mode on notched devices:
+
+```css
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+```
+
+### Input Zoom Prevention
+
+Prevent iOS zoom on input focus by ensuring minimum 16px font size:
+
+```css
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  input[type="time"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+```
+
+### Responsive Patterns
+
+- Use responsive padding: `px-4 sm:px-6 lg:px-8`
+- Stack elements vertically on mobile, horizontally on desktop: `flex flex-col sm:flex-row`
+- Hide non-essential columns in tables on mobile: `hidden sm:table-cell`
+- Use full-width modals on mobile, centered on desktop
+- Implement collapsible navigation (hamburger menu on mobile)
 
 ---
 
-## Ephemeral Environment Testing (REQUIRED STANDARD)
+## Offline-First Architecture
 
-### Overview
+### Principles
 
-Every pull request MUST be testable in an isolated, ephemeral environment that mirrors production. This environment is automatically deployed on PR open/update and destroyed on PR close/merge.
+1. **Optimistic UI**: Update the interface immediately, sync in the background
+2. **Queue and retry**: Failed network requests are queued and retried when online
+3. **Graceful degradation**: App remains functional without network
+4. **Transparent status**: User always knows their connectivity state
 
-### Workflow Structure
-
-```yaml
-name: Ephemeral Environment
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches: [main]
-
-concurrency:
-  group: ephemeral-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-```
-
-### Required Jobs
-
-| Job | Trigger | Purpose |
-|-----|---------|---------|
-| `deploy-ephemeral` | PR opened/updated | Deploy isolated stack per PR |
-| `cleanup-ephemeral` | PR closed/merged | Destroy stack and clean up resources |
-| `diff-against-production` | After deploy | Show infrastructure diff vs production |
-
-### Deployment Requirements
-
-1. **Unique stack per PR**: Use PR number as suffix (e.g., `AppStack-pr-42`)
-2. **Full-stack deployment**: Backend + Frontend + Infrastructure (not just frontend preview)
-3. **CDK context for isolation**: Pass `--context stage=pr-<number>` to differentiate resources
-4. **AWS credentials via OIDC**: Use `id-token: write` permission with role assumption
-5. **Frontend deployment**: Build, upload to S3, invalidate CloudFront
-6. **Post environment URL to PR**: Comment with frontend URL + API URL for reviewers
-
-### PR Comment Format
-
-After successful deployment, post a structured comment:
-
-```markdown
-## Ephemeral Environment Deployed
-
-**PR #<number>** - Ready for testing!
-
-| Resource | URL |
-|----------|-----|
-| Frontend | <cloudfront_url> |
-| API | <api_gateway_url> |
-
----
-**Stack:** `AppStack-pr-<number>`
-**Commit:** `<sha>`
-
-> This environment will be automatically destroyed when the PR is closed or merged.
-```
-
-### Cleanup Requirements
-
-1. **Automatic destruction**: On PR close (merged or not), destroy all resources
-2. **Force flag**: Use `--force` on `cdk destroy` to skip confirmation
-3. **Post cleanup comment**: Confirm destruction with merged/closed status
-4. **No orphaned resources**: Ensure S3 buckets have `autoDeleteObjects: true` and `removalPolicy: DESTROY`
-
-### Infrastructure Diff vs Production
-
-After ephemeral deployment, run `cdk diff` against production to show reviewers what infrastructure changes would be applied on merge:
-
-```yaml
-- name: CDK Diff vs Production
-  run: |
-    npx cdk diff --context stage=prod 2>&1
-```
-
-Post the diff as a collapsible section in a PR comment.
-
-### CDK Stack Design for Ephemeral Support
-
-Stacks MUST support parameterized naming for ephemeral environments:
+### Implementation Pattern
 
 ```typescript
-const stage = this.node.tryGetContext('stage') || 'prod';
-const stackSuffix = stage !== 'prod' ? `-${stage}` : '';
+async function createRecord(record: Record): Promise<void> {
+  // 1. Update UI immediately (optimistic)
+  addRecordToCache(record);
 
-// All resource names include the suffix
-new s3.Bucket(this, 'WebBucket', {
-  bucketName: `app-web${stackSuffix}`,
-  removalPolicy: stage !== 'prod'
-    ? cdk.RemovalPolicy.DESTROY
-    : cdk.RemovalPolicy.RETAIN,
-  autoDeleteObjects: stage !== 'prod',
-});
+  try {
+    // 2. Sync to server
+    await apiClient.post('/records', record);
+  } catch (error) {
+    // 3. Rollback on failure
+    removeRecordFromCache(record.id);
+    showNotification('Failed to save. Will retry when online.');
+    // 4. Queue for retry
+    queueForSync(record);
+  }
+}
 ```
 
-### Required GitHub Secrets/Variables
+### Offline UI Indicators
 
-| Variable | Purpose |
-|----------|---------|
-| `AWS_ROLE_ARN` | OIDC role for ephemeral environment |
-| `AWS_PROD_ROLE_ARN` | Read-only role for production diff |
-| `AWS_ACCOUNT_ID` | Target AWS account |
+- Show clear online/offline status (banner or icon)
+- Indicate when content is stale (served from cache)
+- Disable or queue actions that require network
+- Show sync progress when reconnecting
+- Use subtle visual cues (e.g., greyed out timestamp) for cached data
 
-### Testing in Ephemeral Environments
+### Data Persistence
 
-Reviewers MUST:
-1. Open the ephemeral frontend URL from the PR comment
-2. Verify the feature works end-to-end (not just unit tests)
-3. Check mobile responsiveness (PWA must work on phone browsers)
-4. Verify offline behavior if applicable
-5. Review the infrastructure diff for unexpected changes
+- Use LocalStorage or IndexedDB for offline data
+- Implement conflict resolution for concurrent edits
+- Timestamp all cached data for staleness detection
+- Clear expired cache entries on app startup
+
+---
+
+## Performance Requirements
+
+### Core Web Vitals Targets
+
+| Metric | Target | How |
+|--------|--------|-----|
+| LCP (Largest Contentful Paint) | < 2.5s | Cache-first for app shell |
+| FID (First Input Delay) | < 100ms | Minimal main thread work |
+| CLS (Cumulative Layout Shift) | < 0.1 | Reserve space for dynamic content |
+
+### Optimization Techniques
+
+- Route-level code splitting: `const Page = lazy(() => import('./pages/Page'))`
+- Preload critical resources with `<link rel="preload">`
+- Debounce user input (search, autocomplete): 300ms minimum
+- Virtualize long lists (react-window or similar)
+- Compress images and use modern formats (WebP, AVIF)
 
 ---
 
@@ -406,7 +436,7 @@ Reviewers MUST:
 | Inline error messages with custom styling | Use `<ErrorAlert message="..." />` |
 | Magic color values (`text-blue-600`) | Use semantic tokens (`text-primary-600`) |
 | Different spacing between pages | Use standard `space-y-4 sm:space-y-6` |
-| Duplicated header/footer across page types | Use shared layout wrapper (`LandingPage`) |
+| Duplicated header/footer across page types | Use shared layout wrapper |
 | Custom `<button>` with inline classes | Use `<Button variant="..." size="..." />` |
 
 ### Code Duplication Anti-Patterns
@@ -425,7 +455,7 @@ Reviewers MUST:
 
 Before submitting a PR:
 
-- [ ] Page uses the standard layout wrapper (`LandingPage` or `AuthLandingPage`)
+- [ ] Page uses the standard layout wrapper
 - [ ] Page title uses `<PageHeader>` component
 - [ ] Loading state uses `<LoadingSpinner />`
 - [ ] Error state uses `<ErrorAlert />`
@@ -437,5 +467,6 @@ Before submitting a PR:
 - [ ] No duplicated patterns - checked `src/components/ui/` first
 - [ ] Mobile responsive (tested at 375px width)
 - [ ] Touch targets are minimum 44x44px
-- [ ] Ephemeral environment deploys successfully
-- [ ] Feature is manually testable in the ephemeral environment URL
+- [ ] Lighthouse PWA score >= 90
+- [ ] App works in standalone mode (no browser chrome)
+- [ ] Offline mode shows appropriate cached content
